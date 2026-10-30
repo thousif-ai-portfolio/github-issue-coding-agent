@@ -30,6 +30,12 @@ class PatchProposal(BaseModel):
     edits: list[Edit] = Field(min_length=1)
 
 
+class TestProposal(BaseModel):
+    __test__ = False  # not a pytest test class, despite the name
+
+    code: str = Field(description="A complete pytest file.")
+
+
 # --- API ---
 
 
@@ -78,4 +84,11 @@ class RunDetail(RunSummary):
     explanation: str
     diff: str
     error: str
+    test_output: str
+    regression_test: str
+    pr_url: str
     steps: list[StepOut]
+
+
+class ReviewRequest(BaseModel):
+    comment: str = ""

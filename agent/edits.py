@@ -43,11 +43,11 @@ def apply_edits(root: Path, edits: list[Edit], allowed_files: list[str]) -> dict
     if not changed:
         raise EditError("The edits do not change anything.")
     for rel, content in changed.items():
-        _check_syntax(rel, content)
+        check_syntax(rel, content)
     return changed
 
 
-def _check_syntax(rel: str, content: str) -> None:
+def check_syntax(rel: str, content: str) -> None:
     # Small models often lose indentation in 'replace'; catching it here costs nothing.
     if not rel.endswith(".py"):
         return
@@ -63,14 +63,16 @@ def _check_syntax(rel: str, content: str) -> None:
 
 
 def make_diff(root: Path, changed: dict[str, str]) -> str:
+    """A unified diff of the changes; files that do not exist yet show as added."""
     parts = []
     for rel, new in sorted(changed.items()):
-        old = read_file(root, rel)
+        exists = (root / rel).is_file()
+        old = read_file(root, rel) if exists else ""
         parts.extend(
             difflib.unified_diff(
                 old.splitlines(keepends=True),
                 new.splitlines(keepends=True),
-                fromfile=f"a/{rel}",
+                fromfile=f"a/{rel}" if exists else "/dev/null",
                 tofile=f"b/{rel}",
             )
         )

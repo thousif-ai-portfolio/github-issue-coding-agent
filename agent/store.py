@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS runs (
     explanation TEXT NOT NULL DEFAULT '',
     diff TEXT NOT NULL DEFAULT '',
     error TEXT NOT NULL DEFAULT '',
+    test_output TEXT NOT NULL DEFAULT '',
+    regression_test TEXT NOT NULL DEFAULT '',
+    pr_url TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     finished_at TEXT
 );
@@ -40,7 +43,12 @@ CREATE TABLE IF NOT EXISTS steps (
 );
 """
 
-RUN_FIELDS = {"issue_title", "status", "explanation", "diff", "error", "finished_at"}
+RUN_FIELDS = {
+    "issue_title", "status", "explanation", "diff", "error", "finished_at",
+    "test_output", "regression_test", "pr_url",
+}  # fmt: skip
+# Columns added after week 1, for databases created before them.
+ADDED_COLUMNS = ("test_output", "regression_test", "pr_url")
 
 
 def now() -> str:
@@ -53,6 +61,11 @@ class Store:
         self._path = path
         with closing(self._connect()) as conn:
             conn.executescript(SCHEMA)
+            existing = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
+            for column in ADDED_COLUMNS:
+                if column not in existing:
+                    conn.execute(f"ALTER TABLE runs ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
+            conn.commit()
 
     def _connect(self) -> sqlite3.Connection:
         # A connection per call: runs execute in background threads.

@@ -1,49 +1,71 @@
 # GitHub Issue Coding Agent
 
-An AI agent that reads a GitHub issue, finds the code involved and proposes a fix as a
-reviewable diff. It runs entirely on your own machine for free: a local model, no API keys.
+An AI agent that reads a GitHub issue, writes a test that reproduces it, proposes a fix,
+runs the tests in an isolated container and, once a person approves, opens a draft pull
+request. It runs entirely on your own machine for free: a local model, no API keys.
 
-> **Status: week 1 of 3.** The agent suggests patches but never runs or pushes them.
-> Week 2 adds a Docker sandbox that runs the tests, LangGraph, MCP tools and a human
-> approval step before any draft PR. Week 3 adds the dashboard and benchmark results.
+> **Status: week 2 of 3.** Week 3 adds the dashboard, a larger benchmark with measured
+> results, and a video walkthrough.
 
 ## How it works
 
 ```mermaid
-flowchart LR
-    I[Fetch issue] --> C[Classify<br/>bug / feature / question]
-    C -->|question| S[Skip]
-    C --> F[Search code<br/>rank files by issue words]
+flowchart TD
+    I[Fetch issue] --> C{Classify}
+    C -->|question| S[Skipped]
+    C -->|bug / feature| F[search_code tool<br/>rank files by issue words]
     F --> P[Model picks files]
-    P --> E[Model proposes edits]
+    P --> T[Model writes a regression test<br/>must FAIL on current code]
+    T --> E[Model proposes edits]
     E -->|edit does not apply| E
-    E --> D[Diff for review]
+    E --> R[run_tests tool<br/>Docker sandbox]
+    R -->|tests fail: output sent back| E
+    R -->|pass| H{{Human review}}
+    H -->|reject| X[Rejected]
+    H -->|approve| PR[Draft PR on GitHub]
 ```
 
-Every step is saved to SQLite with its input, output and duration, so each run can be
-inspected afterwards.
+The agent is a [LangGraph](https://github.com/langchain-ai/langgraph) state machine
+([`agent/graph.py`](agent/graph.py)). Its state is saved to SQLite after every step, so a
+run waiting for review survives a restart and resumes where it stopped. Every step is also
+recorded with its input, output and duration, so each run can be inspected afterwards.
 
 **Design choices**
+- **A failing test first.** Before proposing a fix, the model writes a test from the
+  examples in the issue, and the test must fail on the current code. That shows the bug
+  was understood and gives the fix a concrete target. A test that already passes is sent
+  back. If no test reproduces the bug, the repository's own tests still judge the fix.
+- **Tests decide, not the model.** A patch is only offered for review after the
+  repository's tests and the regression test pass. When they fail, the pytest output goes
+  back to the model, up to 3 attempts. In week 1, without this, the model's patch for the
+  median bug applied cleanly but was wrong; now the tests catch it.
+- **Untrusted code runs only in a sandbox.** Tests run in a container with no network, a
+  read-only filesystem, no Linux capabilities, an unprivileged user, and limits on
+  memory, CPU, processes and time ([`agent/sandbox.py`](agent/sandbox.py)). Each run
+  gets a fresh copy of the repository; the original is never modified.
+- **A person approves every PR.** The graph pauses before anything is sent to GitHub.
+  Approval opens a *draft* PR through the REST API, from the exact commit that was
+  tested. The token is never given to git.
+- **Tools over MCP.** The agent reads, searches and tests code only through an
+  [MCP](https://modelcontextprotocol.io) server ([`agent/mcp_server.py`](agent/mcp_server.py)),
+  bound to one repository. The same server works in any MCP client, such as Claude
+  Desktop: `python -m agent.mcp_server --repo path/to/repo`.
 - **Find-and-replace edits, not diffs.** Small models rarely get unified-diff line numbers
-  right, but they can copy a few lines exactly. The agent applies the edits itself and
-  produces the diff, so the diff is always valid. An edit that does not match exactly
-  once is sent back to the model with the reason, up to 3 attempts.
-- **Search before asking the model.** Files are ranked by how many words from the issue
-  they contain (named functions count most). The model then picks from a short list
-  instead of the whole repository. Test files are never candidates.
-- **Model output is checked.** Ollama constrains each reply to a JSON schema, and the
-  agent validates it with Pydantic. Paths the model returns must be on the candidate
-  list, and no file outside the repository can be read.
+  right, but they can copy a few lines exactly. The agent applies the edits and produces
+  the diff itself. An edit must match exactly once and the file must still compile.
 
 ## Stack
 
 | Part | Choice |
 |---|---|
-| API | Python, FastAPI, Pydantic |
+| Agent | LangGraph (SQLite checkpoints, human-in-the-loop interrupt) |
+| Tools | MCP server and client (official `mcp` Python SDK) |
 | Model | Ollama + `qwen2.5-coder:3b` (any Ollama model via one setting) |
+| Sandbox | Docker |
+| API | Python, FastAPI, Pydantic |
 | GitHub | GitHub REST API with `httpx`, Git |
 | Storage | SQLite |
-| Tests / CI | pytest, ruff, GitHub Actions |
+| Tests / CI | pytest, ruff, GitHub Actions (sandbox tests run in CI too) |
 
 ## Demo repo
 
@@ -54,20 +76,27 @@ the agent never sees. A CI test checks that every hidden test fails on the curre
 
 ## Run it
 
-You need Python 3.11+ and [Ollama](https://ollama.com).
+You need Python 3.11+, [Ollama](https://ollama.com) and
+[Docker](https://www.docker.com/products/docker-desktop/).
 
 ```bash
 ollama pull qwen2.5-coder:3b
+docker build -t issue-agent-sandbox sandbox
 python -m venv .venv
 .venv\Scripts\activate          # macOS/Linux: source .venv/bin/activate
 pip install -r requirements-dev.txt
 
 python -m agent.cli issues --demo
-python -m agent.cli suggest --demo 8
+python -m agent.cli run --demo 8        # stops at "awaiting_approval"
+python -m agent.cli approve 1           # or: reject 1 --comment "why"
 ```
 
-A run takes a few minutes on a laptop CPU. It also works on public GitHub repositories:
-`python -m agent.cli suggest owner/name 12`.
+A run takes a few minutes on a laptop CPU. For the demo repo, approval saves the patch
+to `data/patches/`. For a GitHub repository (`python -m agent.cli run owner/name 12`),
+approval opens a draft PR. That needs `AGENT_GITHUB_TOKEN` (see
+[`.env.example`](.env.example)): a fine-grained token for that one repository with
+read/write access to contents and pull requests. Week 2 supports Python repositories
+whose tests need only pytest, because the sandbox has no network to install packages.
 
 The API:
 
@@ -75,9 +104,14 @@ The API:
 uvicorn agent.main:app --reload
 ```
 
-`POST /api/runs` with `{"source": "demo", "issue_number": 8}` starts a run and returns at
-once; `GET /api/runs/{id}` returns its status, diff and every step. Docs are at
-http://localhost:8000/docs.
+| Endpoint | |
+|---|---|
+| `POST /api/runs` | Start a run: `{"source": "demo", "issue_number": 8}`. Returns at once. |
+| `GET /api/runs/{id}` | Status, diff, test output, regression test and every step |
+| `POST /api/runs/{id}/approve` | Approve a run that is `awaiting_approval` |
+| `POST /api/runs/{id}/reject` | Reject it, optionally with `{"comment": "..."}` |
+
+Docs are at http://localhost:8000/docs.
 
 ## Tests
 
@@ -85,4 +119,7 @@ http://localhost:8000/docs.
 pytest
 ```
 
-The tests use a fake model and a fake GitHub, so they run offline in seconds.
+The tests use a fake model and a fake GitHub, so they need neither Ollama nor a network.
+The graph tests really run pytest on a copy of the demo repo, so a wrong patch genuinely
+fails. The Docker tests (network blocked, changes applied) are skipped when Docker is not
+running, and always run in CI.

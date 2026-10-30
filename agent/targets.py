@@ -18,12 +18,14 @@ class Target:
     workspace: Callable[[], Path]
 
 
-def resolve_target(source: str, repo: str | None, settings: Settings) -> Target:
+def resolve_target(
+    source: str, repo: str | None, settings: Settings, github: GitHubClient | None = None
+) -> Target:
     if source == "demo":
         return Target("demo", DemoIssues(settings.demo_issues), lambda: settings.demo_repo)
     if not repo:
         raise ValueError("A GitHub repository (owner/name) is required.")
-    client = GitHubClient(settings.github_token, settings.github_api)
+    github = github or GitHubClient(settings.github_token, settings.github_api)
     return Target(
-        repo, GitHubIssues(client, repo), lambda: sync_repo(repo, settings.workspaces_dir)
+        repo, GitHubIssues(github, repo), lambda: sync_repo(repo, settings.workspaces_dir)
     )

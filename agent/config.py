@@ -36,8 +36,22 @@ class Settings(BaseSettings):
     # How many candidate files the model chooses from, and how many it may change.
     candidate_files: int = 8
     max_files: int = 2
-    # Attempts at a patch that applies cleanly; each retry shows the model its mistake.
+    # Attempts at a patch that applies and passes the tests; each retry shows the model
+    # what went wrong.
     max_patch_attempts: int = 3
+    # Attempts at a regression test that fails on the current code, i.e. shows the bug.
+    max_test_attempts: int = 2
+
+    # The Docker image tests run in (built from sandbox/Dockerfile) and its limits.
+    sandbox_image: str = "issue-agent-sandbox"
+    sandbox_timeout_s: int = 120
+    sandbox_memory: str = "512m"
+    sandbox_cpus: str = "1"
+
+    # LangGraph saves each run's state here, so a run waiting for approval survives restarts.
+    checkpoint_path: Path = PROJECT_ROOT / "data" / "checkpoints.db"
+    # Approved patches for the demo repo, which has no GitHub repository to open a PR on.
+    patches_dir: Path = PROJECT_ROOT / "data" / "patches"
 
 
 @lru_cache

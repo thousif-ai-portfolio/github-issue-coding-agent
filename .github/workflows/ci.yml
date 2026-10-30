@@ -10,8 +10,8 @@ jobs:
     name: Lint and tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -19,5 +19,8 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
       - run: ruff format --check .
+      # Lets the sandbox tests run for real: network blocked, changes applied in a container.
+      - name: Build the test sandbox image
+        run: docker build -t issue-agent-sandbox sandbox
       # Uses a fake model, so no Ollama is needed. Also checks every planted bug is real.
       - run: pytest

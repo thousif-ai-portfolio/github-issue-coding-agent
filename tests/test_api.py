@@ -1,16 +1,15 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from agent.config import get_settings
-from agent.main import app, get_llm, get_store
-from tests.conftest import MEDIAN_FIX, FakeLLM, median_replies
+from agent.main import app, get_deps
+from tests.conftest import MEDIAN_FIX, MEDIAN_TEST, median_replies
 
 
 @pytest.fixture
-def client(settings, store):
-    app.dependency_overrides[get_settings] = lambda: settings
-    app.dependency_overrides[get_store] = lambda: store
-    app.dependency_overrides[get_llm] = lambda: FakeLLM(median_replies(MEDIAN_FIX))
+def client(make_deps):
+    app.dependency_overrides[get_deps] = lambda: make_deps(
+        median_replies({"code": MEDIAN_TEST}, MEDIAN_FIX)
+    )
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -21,18 +20,32 @@ def test_lists_demo_issues(client):
     assert len(response.json()) == 8
 
 
-def test_run_starts_at_once_and_finishes_in_the_background(client):
+def test_run_waits_for_approval_then_finishes(client):
     response = client.post("/api/runs", json={"source": "demo", "issue_number": 8})
     assert response.status_code == 202
     assert response.json()["status"] == "running"
+    run_id = response.json()["id"]
 
-    # TestClient runs background tasks before returning, so the run is already done.
-    run = client.get(f"/api/runs/{response.json()['id']}").json()
-    assert run["status"] == "suggested"
+    # TestClient runs background tasks before returning, so the run has reached the review.
+    run = client.get(f"/api/runs/{run_id}").json()
+    assert run["status"] == "awaiting_approval"
     assert run["model"] == "fake-model"
     assert "+        return (ordered[middle - 1] + ordered[middle]) / 2" in run["diff"]
-    assert len(run["steps"]) == 6
-    assert [r["id"] for r in client.get("/api/runs").json()] == [run["id"]]
+    assert run["regression_test"] == MEDIAN_TEST
+
+    assert client.post(f"/api/runs/{run_id}/approve").status_code == 202
+    assert client.get(f"/api/runs/{run_id}").json()["status"] == "approved"
+    # A finished run cannot be reviewed again.
+    assert client.post(f"/api/runs/{run_id}/reject").status_code == 409
+    assert [r["id"] for r in client.get("/api/runs").json()] == [run_id]
+
+
+def test_reject_with_a_comment(client):
+    run_id = client.post("/api/runs", json={"source": "demo", "issue_number": 8}).json()["id"]
+    response = client.post(f"/api/runs/{run_id}/reject", json={"comment": "Too risky"})
+    assert response.status_code == 202
+    run = client.get(f"/api/runs/{run_id}").json()
+    assert (run["status"], run["error"]) == ("rejected", "Too risky")
 
 
 @pytest.mark.parametrize(
@@ -49,3 +62,4 @@ def test_rejects_bad_run_requests(client, body):
 
 def test_unknown_run(client):
     assert client.get("/api/runs/999").status_code == 404
+    assert client.post("/api/runs/999/approve").status_code == 404
