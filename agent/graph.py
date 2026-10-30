@@ -345,7 +345,8 @@ class Agent:
 
 def _write(path: Path, text: str) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    # LF endings even on Windows, so the saved patch applies with git.
+    path.write_text(text, encoding="utf-8", newline="\n")
     return path.as_posix()
 
 

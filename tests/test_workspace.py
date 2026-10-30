@@ -1,3 +1,5 @@
+import subprocess
+
 import pytest
 
 from agent.config import Settings
@@ -34,6 +36,27 @@ def test_apply_edits_and_diff(tmp_path):
     assert "-    return a - b" in diff and "+    return a + b" in diff
     # Suggestions are never written to disk.
     assert "a - b" in (tmp_path / "calc.py").read_text()
+
+
+def test_diff_applies_with_git_when_files_lack_a_final_newline(tmp_path):
+    # The model's tests usually end without a newline; the saved patch must still apply.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "calc.py").write_text("def add(a, b):\n    return a - b\n", newline="\n")
+    changed = {
+        "calc.py": "def add(a, b):\n    return a + b",
+        "tests/test_calc.py": (
+            "from calc import add\n\n\ndef test_add():\n    assert add(1, 2) == 3"
+        ),
+    }
+    patch = tmp_path / "fix.diff"
+    patch.write_text(make_diff(repo, changed), encoding="utf-8", newline="\n")
+
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    result = subprocess.run(["git", "apply", str(patch)], cwd=repo, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    for rel, content in changed.items():
+        assert (repo / rel).read_text(encoding="utf-8") == content
 
 
 @pytest.mark.parametrize(

@@ -63,17 +63,19 @@ def check_syntax(rel: str, content: str) -> None:
 
 
 def make_diff(root: Path, changed: dict[str, str]) -> str:
-    """A unified diff of the changes; files that do not exist yet show as added."""
+    """A unified diff of the changes that `git apply` accepts; files that do not exist yet
+    show as added."""
     parts = []
     for rel, new in sorted(changed.items()):
         exists = (root / rel).is_file()
         old = read_file(root, rel) if exists else ""
-        parts.extend(
-            difflib.unified_diff(
-                old.splitlines(keepends=True),
-                new.splitlines(keepends=True),
-                fromfile=f"a/{rel}" if exists else "/dev/null",
-                tofile=f"b/{rel}",
-            )
-        )
+        for line in difflib.unified_diff(
+            old.splitlines(keepends=True),
+            new.splitlines(keepends=True),
+            fromfile=f"a/{rel}" if exists else "/dev/null",
+            tofile=f"b/{rel}",
+        ):
+            # difflib leaves out the marker for a last line without a newline, which
+            # makes the patch corrupt; model-written files often end that way.
+            parts.append(line if line.endswith("\n") else f"{line}\n\\ No newline at end of file\n")
     return "".join(parts)
