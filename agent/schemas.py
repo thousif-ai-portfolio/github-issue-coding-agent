@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from agent.github_client import check_repo_name
 
@@ -33,7 +33,20 @@ class PatchProposal(BaseModel):
 class TestProposal(BaseModel):
     __test__ = False  # not a pytest test class, despite the name
 
-    code: str = Field(description="A complete pytest file.")
+    code: str = Field(
+        description="The full Python source of the test file: imports, then a def test_ "
+        "function with asserts. Not the file's name."
+    )
+
+    @field_validator("code")
+    @classmethod
+    def _is_test_source(cls, code: str) -> str:
+        # Small models often put the test file's path here instead of its source.
+        if "def test" not in code:
+            raise ValueError(
+                "'code' must be the test's Python source with a def test_ function, not a file name"
+            )
+        return code
 
 
 # --- API ---

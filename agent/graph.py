@@ -3,7 +3,7 @@
     fetch_issue -> prepare_workspace -> classify --(question)--> skipped
         -> search_code -> choose_files -> write_test
         -> propose_patch <-> run_tests      (retry with the error, up to 3 attempts)
-        -> await_approval --(rejected)--> rejected
+        -> offer_for_review -> await_approval --(rejected)--> rejected
         -> open_pr
 
 The graph pauses at await_approval until a person approves or rejects the patch. Its state
@@ -256,9 +256,11 @@ class Agent:
         )
         return {"test_result": result, "feedback": feedback}
 
-    def await_approval(self, state: RunState) -> dict:
+    def offer_for_review(self, state: RunState) -> dict:
+        """Saves the patch on the run for a reviewer to read. A step of its own because
+        await_approval runs again from the top when it resumes, and marking the run
+        awaiting_approval then would briefly undo the reviewer's decision."""
         patch, result = state["patch"], state["test_result"]
-        # Runs again on resume, so everything before interrupt() must be safe to repeat.
         self.deps.store.update_run(
             state["run_id"],
             status="awaiting_approval",
@@ -267,7 +269,11 @@ class Agent:
             test_output=result["output"],
             regression_test=(state.get("regression_test") or {}).get("code", ""),
         )
-        decision = interrupt({"run_id": state["run_id"], "diff": patch["diff"]})
+        return {}
+
+    def await_approval(self, state: RunState) -> dict:
+        # Runs again on resume, so everything before interrupt() must be safe to repeat.
+        decision = interrupt({"run_id": state["run_id"], "diff": state["patch"]["diff"]})
         self._trace(state).step("human_review", {}, lambda: decision)
         return {"decision": decision}
 
@@ -327,7 +333,7 @@ class Agent:
 
     def after_tests(self, state: RunState) -> str:
         if state["test_result"]["passed"]:
-            return "await_approval"
+            return "offer_for_review"
         return self._retry_or_fail(state)
 
     def _retry_or_fail(self, state: RunState) -> str:
@@ -355,6 +361,7 @@ def build_graph(deps: Deps, checkpointer) -> Any:
         "write_test": agent.write_test,
         "propose_patch": agent.propose_patch,
         "run_tests": agent.run_tests,
+        "offer_for_review": agent.offer_for_review,
         "await_approval": agent.await_approval,
         "open_pr": agent.open_pr,
         "skipped": agent.skipped,
@@ -370,6 +377,7 @@ def build_graph(deps: Deps, checkpointer) -> Any:
         ("search_code", "choose_files"),
         ("choose_files", "write_test"),
         ("write_test", "propose_patch"),
+        ("offer_for_review", "await_approval"),
         ("open_pr", END),
         ("skipped", END),
         ("rejected", END),
@@ -381,7 +389,7 @@ def build_graph(deps: Deps, checkpointer) -> Any:
         "propose_patch", agent.after_propose, ["run_tests", "propose_patch", "failed"]
     )
     graph.add_conditional_edges(
-        "run_tests", agent.after_tests, ["await_approval", "propose_patch", "failed"]
+        "run_tests", agent.after_tests, ["offer_for_review", "propose_patch", "failed"]
     )
     graph.add_conditional_edges("await_approval", agent.after_review, ["open_pr", "rejected"])
     return graph.compile(checkpointer=checkpointer)
@@ -411,6 +419,15 @@ def start_run(run_id: int, source: str, repo: str | None, issue_number: int, dep
         "feedback": "",
     }
     _invoke(deps, run_id, state)
+
+
+def pending_changes(run_id: int, deps: Deps) -> dict[str, str]:
+    """The files a paused run's patch would change ({path: new content}), read from its
+    checkpoint. Empty if the run has no patch."""
+    with closing(sqlite3.connect(deps.settings.checkpoint_path, check_same_thread=False)) as conn:
+        graph = build_graph(deps, SqliteSaver(conn))
+        state = graph.get_state({"configurable": {"thread_id": f"run-{run_id}"}}).values
+    return dict((state.get("patch") or {}).get("changes") or {})
 
 
 def resume_run(run_id: int, approved: bool, comment: str, deps: Deps) -> None:

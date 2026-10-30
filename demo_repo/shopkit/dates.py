@@ -16,3 +16,9 @@ def add_business_days(start: date, days: int) -> date:
         if not is_weekend(current):
             days -= 1
     return current
+
+
+def parse_date(text: str) -> date:
+    """Reads a day-first date as written on our invoices: "31/10/2026" -> 31 October 2026."""
+    day, month, year = (int(part) for part in text.split("/"))
+    return date(year, day, month)

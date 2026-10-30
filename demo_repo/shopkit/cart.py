@@ -21,6 +21,7 @@ class Cart:
         self.quantities[item] = quantity
 
     def remove(self, item: str) -> None:
+        """Takes an item out of the cart. Removing an item that is not there does nothing."""
         del self.prices[item]
         del self.quantities[item]
 

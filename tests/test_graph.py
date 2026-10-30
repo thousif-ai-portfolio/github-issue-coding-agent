@@ -75,7 +75,8 @@ def test_a_test_that_passes_today_is_rejected(make_deps):
 
 
 def test_without_a_reproducing_test_the_repo_tests_still_judge_the_patch(make_deps):
-    deps = make_deps(median_replies({"code": WEAK_TEST}, {"code": "def broken(:\n"}, WRONG_FIX))
+    broken = {"code": "def test_broken(:\n"}
+    deps = make_deps(median_replies({"code": WEAK_TEST}, broken, WRONG_FIX))
     deps.settings.max_patch_attempts = 1
     run = start(deps)
     # The repo's own test median([3, 1, 2]) == 2 catches the wrong fix.
@@ -161,3 +162,20 @@ def test_approval_on_github_opens_a_draft_pr(make_deps, settings, tmp_path, monk
     pr = json.loads(next(c for m, p, c in requests if p.endswith("/pulls")))
     assert pr["draft"] is True and pr["base"] == "main"
     assert pr["body"].startswith("Fixes #8.")
+
+
+def test_resuming_never_marks_the_run_awaiting_approval_again(make_deps):
+    # A reviewer's page polling during the resume must not see the decision undone.
+    deps = make_deps(median_replies({"code": MEDIAN_TEST}, MEDIAN_FIX))
+    run = start(deps)
+    statuses = []
+    update_run = deps.store.update_run
+
+    def record(run_id, **fields):
+        if "status" in fields:
+            statuses.append(fields["status"])
+        update_run(run_id, **fields)
+
+    deps.store.update_run = record
+    resume_run(run["id"], True, "", deps)
+    assert statuses == ["running", "approved"]

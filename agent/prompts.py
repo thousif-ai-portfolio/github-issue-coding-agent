@@ -67,10 +67,12 @@ def test_prompt(
     prompt = (
         f"Write a pytest test that reproduces this GitHub issue.\n\n{format_issue(issue)}\n\n"
         f"{_sources(root, files, max_chars)}\n\n{example}"
-        f"The test is saved as {test_path} and run with pytest from the repository root. "
         "Use the examples and expected values given in the issue. The test must FAIL on "
         "the code above, because that shows the bug, and pass once the bug is fixed. "
-        "Write one short test function with a few asserts, and the imports it needs."
+        "Write one short test function with a few asserts, and the imports it needs. "
+        f"It will be saved as {test_path} and run with pytest from the repository root.\n\n"
+        "Reply with the complete Python source of the test file in 'code', starting with "
+        "its imports. Do not reply with the file name."
     )
     if feedback:
         prompt += f"\n\nYour previous test was rejected: {feedback}\nWrite a new test."

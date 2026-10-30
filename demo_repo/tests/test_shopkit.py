@@ -5,10 +5,12 @@ from datetime import date
 import pytest
 
 from shopkit.cart import Cart
-from shopkit.dates import add_business_days, is_weekend
-from shopkit.money import apply_discount, format_price
-from shopkit.stats import average, median
-from shopkit.text import slugify, truncate
+from shopkit.dates import add_business_days, is_weekend, parse_date
+from shopkit.inventory import Inventory
+from shopkit.money import apply_discount, format_price, parse_price, split_evenly
+from shopkit.shipping import shipping_cost, shipping_for_order
+from shopkit.stats import average, median, percent_change, top_n
+from shopkit.text import normalize_whitespace, slugify, truncate
 
 
 def test_slugify_simple_names():
@@ -55,3 +57,43 @@ def test_dates():
 def test_stats():
     assert average([1, 2, 3]) == 2
     assert median([3, 1, 2]) == 2
+
+
+def test_normalize_whitespace_collapses_spaces():
+    assert normalize_whitespace("  big   red  mug ") == "big red mug"
+
+
+def test_parse_price_and_split_evenly():
+    assert parse_price("$12.34") == 1234
+    assert parse_price("7") == 700
+    assert split_evenly(900, 3) == [300, 300, 300]
+    with pytest.raises(ValueError):
+        split_evenly(100, 0)
+
+
+def test_parse_date_rejects_garbage():
+    with pytest.raises(ValueError):
+        parse_date("not a date")
+
+
+def test_percent_change_and_top_n():
+    assert percent_change(100, 100) == 0
+    with pytest.raises(ValueError):
+        percent_change(0, 5)
+    assert sorted(top_n({"a": 1, "b": 2}, 5)) == ["a", "b"]
+
+
+def test_inventory_restock_and_reserve():
+    inventory = Inventory()
+    inventory.restock("lamp", 3)
+    inventory.restock("lamp", 2)
+    inventory.reserve("lamp", 4)
+    assert inventory.stock["lamp"] == 1
+    assert inventory.low_stock(3) == ["lamp"]
+
+
+def test_shipping_cost_by_weight():
+    assert shipping_cost(300) == 499
+    assert shipping_cost(2000) == 999
+    assert shipping_cost(2500) == 1499
+    assert shipping_for_order(10000, 2500) == 0

@@ -14,3 +14,10 @@ def truncate(text: str, length: int, suffix: str = "...") -> str:
     if len(text) <= length:
         return text
     return text[:length] + suffix
+
+
+def normalize_whitespace(text: str) -> str:
+    """Collapses every run of spaces, tabs and newlines into one space and trims the ends."""
+    while "  " in text:
+        text = text.replace("  ", " ")
+    return text.strip(" ")

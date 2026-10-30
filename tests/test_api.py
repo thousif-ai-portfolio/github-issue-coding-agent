@@ -17,7 +17,7 @@ def client(make_deps):
 def test_lists_demo_issues(client):
     response = client.get("/api/issues", params={"source": "demo"})
     assert response.status_code == 200
-    assert len(response.json()) == 8
+    assert len(response.json()) == 18
 
 
 def test_run_waits_for_approval_then_finishes(client):

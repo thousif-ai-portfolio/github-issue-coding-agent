@@ -9,6 +9,7 @@ from agent.tools import ToolClient, ToolError
 from tests.conftest import LocalSandbox
 
 settings = Settings()
+STATS_FUNCTIONS = ("average", "median", "percent_change", "top_n")
 
 
 @pytest.fixture
@@ -56,7 +57,9 @@ docker = pytest.mark.skipif(not docker_available(), reason="Docker is not runnin
 def test_docker_runs_the_tests_with_changes_applied():
     sandbox = DockerSandbox(settings.sandbox_image)
     assert sandbox.run_tests(settings.demo_repo, {}).passed
-    broken = {"shopkit/stats.py": "def average(v):\n    return 0\n\ndef median(v):\n    return 0\n"}
+    # Every function the repo's tests import, each returning a wrong answer.
+    stub = "".join(f"def {name}(*args):\n    return 0\n\n" for name in STATS_FUNCTIONS)
+    broken = {"shopkit/stats.py": stub}
     result = sandbox.run_tests(settings.demo_repo, broken)
     assert not result.passed and result.exit_code == 1
 
