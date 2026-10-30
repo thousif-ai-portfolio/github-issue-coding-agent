@@ -63,3 +63,23 @@ def test_rejects_bad_run_requests(client, body):
 def test_unknown_run(client):
     assert client.get("/api/runs/999").status_code == 404
     assert client.post("/api/runs/999/approve").status_code == 404
+
+
+def test_serves_built_dashboard_without_hiding_the_api(tmp_path):
+    from fastapi import FastAPI
+
+    from agent.main import mount_dashboard
+
+    site = FastAPI()
+
+    @site.get("/api/health")
+    def health() -> dict:
+        return {"status": "ok"}
+
+    assert not mount_dashboard(site, tmp_path)  # not built yet: nothing mounted
+    (tmp_path / "index.html").write_text("<div id=root></div>", encoding="utf-8")
+    assert mount_dashboard(site, tmp_path)
+
+    browser = TestClient(site)
+    assert "<div id=root>" in browser.get("/").text
+    assert browser.get("/api/health").json() == {"status": "ok"}

@@ -24,3 +24,21 @@ jobs:
         run: docker build -t issue-agent-sandbox sandbox
       # Uses a fake model, so no Ollama is needed. Also checks every planted bug is real.
       - run: pytest
+
+  dashboard:
+    name: Dashboard build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      # Type-checks (tsc -b) and builds.
+      - run: npm run build

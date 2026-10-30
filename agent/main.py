@@ -4,9 +4,11 @@ approve or reject it before anything is sent to GitHub."""
 
 from dataclasses import asdict
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 
 from agent.config import Settings, get_settings
 from agent.github_client import GitHubClient, GitHubError
@@ -120,3 +122,19 @@ def reject_run(
     deps: Deps = Depends(get_deps),
 ) -> dict:
     return _review(run_id, False, review.comment if review else "", background, deps)
+
+
+DASHBOARD_DIR = Path(__file__).resolve().parent.parent / "dashboard" / "dist"
+
+
+def mount_dashboard(app: FastAPI, directory: Path) -> bool:
+    """Serves the built React dashboard at /, after the API routes so they win.
+    It is only there once built (cd dashboard && npm run build); in development
+    `npm run dev` serves it instead."""
+    if not (directory / "index.html").is_file():
+        return False
+    app.mount("/", StaticFiles(directory=directory, html=True), name="dashboard")
+    return True
+
+
+mount_dashboard(app, DASHBOARD_DIR)

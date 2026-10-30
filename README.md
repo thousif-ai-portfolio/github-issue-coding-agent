@@ -4,8 +4,8 @@ An AI agent that reads a GitHub issue, writes a test that reproduces it, propose
 runs the tests in an isolated container and, once a person approves, opens a draft pull
 request. It runs entirely on your own machine for free: a local model, no API keys.
 
-> **Status: week 2 of 3.** Week 3 adds the dashboard, a larger benchmark with measured
-> results, and a video walkthrough.
+> **Status: week 3 of 3, in progress.** The dashboard is done; a larger benchmark with
+> measured results and a video walkthrough are next.
 
 ## How it works
 
@@ -63,9 +63,10 @@ recorded with its input, output and duration, so each run can be inspected after
 | Model | Ollama + `qwen2.5-coder:3b` (any Ollama model via one setting) |
 | Sandbox | Docker |
 | API | Python, FastAPI, Pydantic |
+| Dashboard | React, TypeScript, Vite |
 | GitHub | GitHub REST API with `httpx`, Git |
 | Storage | SQLite |
-| Tests / CI | pytest, ruff, GitHub Actions (sandbox tests run in CI too) |
+| Tests / CI | pytest, ruff, oxlint, GitHub Actions (sandbox tests run in CI too) |
 
 ## Demo repo
 
@@ -98,7 +99,21 @@ approval opens a draft PR. That needs `AGENT_GITHUB_TOKEN` (see
 read/write access to contents and pull requests. Week 2 supports Python repositories
 whose tests need only pytest, because the sandbox has no network to install packages.
 
-The API:
+### Dashboard
+
+A React dashboard to start runs, watch each step as the agent works, read the diff,
+regression test and sandbox output, and approve or reject. Build it once (needs
+[Node.js](https://nodejs.org) 20+) and the API serves it:
+
+```bash
+cd dashboard && npm install && npm run build && cd ..
+uvicorn agent.main:app
+```
+
+Then open http://localhost:8000. While working on the dashboard itself, run
+`npm run dev` in `dashboard/` instead (http://localhost:5173, proxies `/api` to the API).
+
+### API
 
 ```bash
 uvicorn agent.main:app --reload
