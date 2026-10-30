@@ -6,6 +6,9 @@ request. It runs entirely on your own machine for free: a local model, no API ke
 
 ![A run in the dashboard: the steps fill in, the patch waits for review, and is approved](docs/images/dashboard-run.gif)
 
+**[Watch the 3-minute walkthrough video](docs/demo.mp4)** (narrated, with captions): a live
+run from issue to approval, a wrong fix the hidden test caught, and the benchmark results.
+
 **Benchmark (18 planted bugs, graded by hidden tests):** a 3-billion-parameter model on a
 laptop CPU fixes 6 of 18. When it asks for review, it is right 75% of the time, and every
 patch is checked by a person before anything reaches GitHub. [Results and failure

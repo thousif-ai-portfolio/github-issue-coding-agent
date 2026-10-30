@@ -1,5 +1,8 @@
 # Video walkthrough: GitHub Issue Coding Agent (about 3 minutes)
 
+> The recorded video is [`demo.mp4`](demo.mp4): real screenshots of a live run, narrated
+> with the offline Windows voice. To re-record it in your own voice, follow the script below.
+
 ## Before you record
 
 - **Start everything:** Docker Desktop and Ollama running, then
