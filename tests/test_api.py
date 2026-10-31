@@ -33,10 +33,10 @@ def test_run_waits_for_approval_then_finishes(client):
     assert "+        return (ordered[middle - 1] + ordered[middle]) / 2" in run["diff"]
     assert run["regression_test"] == MEDIAN_TEST
 
-    assert client.post(f"/api/runs/{run_id}/approve").status_code == 202
+    assert client.post(f"/api/runs/{run_id}/approve", json={}).status_code == 202
     assert client.get(f"/api/runs/{run_id}").json()["status"] == "approved"
     # A finished run cannot be reviewed again.
-    assert client.post(f"/api/runs/{run_id}/reject").status_code == 409
+    assert client.post(f"/api/runs/{run_id}/reject", json={}).status_code == 409
     assert [r["id"] for r in client.get("/api/runs").json()] == [run_id]
 
 
@@ -62,7 +62,17 @@ def test_rejects_bad_run_requests(client, body):
 
 def test_unknown_run(client):
     assert client.get("/api/runs/999").status_code == 404
-    assert client.post("/api/runs/999/approve").status_code == 404
+    assert client.post("/api/runs/999/approve", json={}).status_code == 404
+
+
+def test_approval_needs_a_json_body_so_other_websites_cannot_send_it(client):
+    run_id = client.post("/api/runs", json={"source": "demo", "issue_number": 1}).json()["id"]
+    # What a cross-site form or no-cors fetch can send: no JSON body.
+    assert client.post(f"/api/runs/{run_id}/approve").status_code == 422
+    form = {"Content-Type": "application/x-www-form-urlencoded"}
+    assert (
+        client.post(f"/api/runs/{run_id}/approve", content="x=1", headers=form).status_code == 422
+    )
 
 
 def test_serves_built_dashboard_without_hiding_the_api(tmp_path):

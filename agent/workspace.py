@@ -20,8 +20,15 @@ class WorkspaceError(ValueError):
 
 
 def is_test_file(path: str) -> bool:
-    name = path.rsplit("/", 1)[-1]
-    return path.startswith("tests/") or "/tests/" in path or name.startswith("test_")
+    """Tests and pytest configuration: editing these could make failing tests pass."""
+    parts = path.split("/")
+    name = parts[-1]
+    return (
+        any(part in ("tests", "test") for part in parts[:-1])
+        or name.startswith("test_")
+        or name.endswith("_test.py")
+        or name == "conftest.py"
+    )
 
 
 def list_source_files(root: Path) -> list[str]:
@@ -29,7 +36,12 @@ def list_source_files(root: Path) -> list[str]:
     files = []
     for path in root.rglob("*"):
         rel = path.relative_to(root)
-        if path.suffix in SOURCE_SUFFIXES and not SKIP_DIRS.intersection(rel.parts):
+        if (
+            path.suffix in SOURCE_SUFFIXES
+            and path.is_file()
+            and not path.is_symlink()
+            and not SKIP_DIRS.intersection(rel.parts)
+        ):
             files.append(rel.as_posix())
     return sorted(files)
 

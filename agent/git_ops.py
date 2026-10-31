@@ -1,5 +1,6 @@
 """Git commands, run as subprocesses. Week 1 only needs a fresh copy of the repository."""
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -13,7 +14,13 @@ class GitError(RuntimeError):
 def git(*args: str, cwd: Path | None = None) -> str:
     try:
         result = subprocess.run(
-            ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=300
+            ["git", *args],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            # Never ask for credentials: only public repositories are cloned.
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"},
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise GitError(f"git {args[0]} could not run: {exc}") from exc

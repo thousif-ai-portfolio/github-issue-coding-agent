@@ -35,11 +35,6 @@ class TestResult:
     duration_ms: int
     timed_out: bool = False
 
-    @property
-    def collection_error(self) -> bool:
-        # pytest exit codes: 1 tests failed, 2 interrupted or import error, 4 usage, 5 none ran.
-        return self.exit_code in (2, 3, 4, 5)
-
 
 class Sandbox(Protocol):
     def run_tests(
@@ -57,7 +52,13 @@ def docker_available() -> bool:
 
 
 def copy_repo(root: Path, target: Path, changes: dict[str, str]) -> None:
-    shutil.copytree(root, target, ignore=shutil.ignore_patterns(*SKIP_DIRS))
+    skip = shutil.ignore_patterns(*SKIP_DIRS)
+
+    def ignore(folder: str, names: list[str]) -> set[str]:
+        # copytree would copy what a link points to, e.g. a file outside the repository.
+        return set(skip(folder, names)) | {n for n in names if (Path(folder) / n).is_symlink()}
+
+    shutil.copytree(root, target, ignore=ignore)
     for rel, content in changes.items():
         path = (target / rel).resolve()
         if not path.is_relative_to(target.resolve()):

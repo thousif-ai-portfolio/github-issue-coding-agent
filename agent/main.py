@@ -26,7 +26,7 @@ app = FastAPI(title="GitHub Issue Coding Agent", version="0.2.0")
 @lru_cache
 def get_deps() -> Deps:
     settings = get_settings()
-    return Deps(
+    deps = Deps(
         llm=OllamaLLM(
             settings.ollama_host,
             settings.llm_model,
@@ -43,6 +43,9 @@ def get_deps() -> Deps:
         settings=settings,
         github=GitHubClient(settings.github_token, settings.github_api),
     )
+    # Runs execute inside this process, so any still "running" were cut off by a restart.
+    deps.store.fail_interrupted()
+    return deps
 
 
 @app.get("/api/health")
@@ -96,10 +99,9 @@ def get_run(run_id: int, deps: Deps = Depends(get_deps)) -> dict:
 
 def _review(run_id: int, approved: bool, comment: str, background, deps: Deps) -> dict:
     run = _get_run(run_id, deps)
-    if run["status"] != "awaiting_approval":
+    # One atomic update, so two clicks at the same moment cannot both resume the run.
+    if not deps.store.claim_for_review(run_id):
         raise HTTPException(409, f"Run {run_id} is {run['status']}, not awaiting approval.")
-    # Marked before the background task starts, so a second click cannot resume it twice.
-    deps.store.update_run(run_id, status="running")
     background.add_task(resume_run, run_id, approved, comment, deps)
     return deps.store.get_run(run_id)
 
@@ -108,20 +110,22 @@ def _review(run_id: int, approved: bool, comment: str, background, deps: Deps) -
 def approve_run(
     run_id: int,
     background: BackgroundTasks,
-    review: ReviewRequest | None = None,
+    review: ReviewRequest,
     deps: Deps = Depends(get_deps),
 ) -> dict:
-    return _review(run_id, True, review.comment if review else "", background, deps)
+    """Needs a JSON body ({} is fine): a browser only sends one cross-site after a CORS
+    check this API never passes, so another web page cannot approve a run."""
+    return _review(run_id, True, review.comment, background, deps)
 
 
 @app.post("/api/runs/{run_id}/reject", status_code=202, response_model=RunSummary)
 def reject_run(
     run_id: int,
     background: BackgroundTasks,
-    review: ReviewRequest | None = None,
+    review: ReviewRequest,
     deps: Deps = Depends(get_deps),
 ) -> dict:
-    return _review(run_id, False, review.comment if review else "", background, deps)
+    return _review(run_id, False, review.comment, background, deps)
 
 
 DASHBOARD_DIR = Path(__file__).resolve().parent.parent / "dashboard" / "dist"

@@ -2,6 +2,7 @@
 
 import base64
 import re
+from urllib.parse import quote
 
 import httpx
 
@@ -97,7 +98,10 @@ class GitHubClient:
         )
         for path, content in sorted(files.items()):
             existing = self._request(
-                "GET", f"/repos/{repo}/contents/{path}", params={"ref": branch}, missing_ok=True
+                "GET",
+                f"/repos/{repo}/contents/{quote(path)}",
+                params={"ref": branch},
+                missing_ok=True,
             )
             payload = {
                 "message": f"{'Update' if existing else 'Add'} {path}",
@@ -106,7 +110,7 @@ class GitHubClient:
             }
             if existing:
                 payload["sha"] = existing["sha"]
-            self._request("PUT", f"/repos/{repo}/contents/{path}", json=payload)
+            self._request("PUT", f"/repos/{repo}/contents/{quote(path)}", json=payload)
         pr = self._request(
             "POST",
             f"/repos/{repo}/pulls",

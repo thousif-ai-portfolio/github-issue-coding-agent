@@ -130,17 +130,21 @@ class Agent:
     def prepare_workspace(self, state: RunState) -> dict:
         target = self._target(state)
         root = self._trace(state).step(
-            "prepare_workspace", {"repo": target.label}, target.workspace
+            "prepare_workspace", {"repo": target.label}, partial(target.workspace, state["run_id"])
         )
         return {"root": str(root)}
 
     def classify(self, state: RunState) -> dict:
         prompt = classify_prompt(self._issue(state))
-        result = self._trace(state).step(
-            "classify",
-            {"prompt": prompt},
-            partial(self.deps.llm.complete, SYSTEM, prompt, Classification),
-        )
+
+        def classify() -> Classification:
+            try:
+                return self.deps.llm.complete(SYSTEM, prompt, Classification)
+            except InvalidReplyError:
+                # Treat it as a bug: the tests still decide whether a fix is right.
+                return Classification(kind="bug", summary="The model's reply could not be read.")
+
+        result = self._trace(state).step("classify", {"prompt": prompt}, classify)
         return {"classification": result.model_dump()}
 
     def search_code(self, state: RunState) -> dict:
@@ -162,7 +166,10 @@ class Agent:
         )
 
         def choose() -> FileChoice:
-            choice = self.deps.llm.complete(SYSTEM, prompt, FileChoice)
+            try:
+                choice = self.deps.llm.complete(SYSTEM, prompt, FileChoice)
+            except InvalidReplyError:
+                choice = FileChoice(files=[], reason="The model's reply could not be read.")
             files = [f for f in map(_normalise_path, choice.files) if f in candidates]
             # Fall back to the best search hit rather than failing on a bad choice.
             files = list(dict.fromkeys(files))[: self.settings.max_files] or candidates[:1]
@@ -286,20 +293,25 @@ class Agent:
                 "save_patch", {"path": path.as_posix()}, partial(_write, path, patch["diff"])
             )
             return self._finish(state, "approved")
+        output = state["test_result"]["output"].replace("```", "` ` `")
         body = (
             f"Fixes #{issue.number}.\n\n{patch['explanation']}\n\n"
             f"Proposed by the issue coding agent and approved by a reviewer. The tests "
-            f"passed in an isolated container:\n\n```\n{state['test_result']['output']}\n```"
+            f"passed in an isolated container:\n\n```\n{output}\n```"
         )
+        root, branch = self._root(state), f"agent/issue-{issue.number}-run-{run_id}"
+        files = {
+            path: _line_endings_like(root / path, text) for path, text in patch["changes"].items()
+        }
         url = self._trace(state).step(
             "open_pr",
-            {"branch": f"agent/issue-{issue.number}-run-{run_id}"},
+            {"branch": branch},
             partial(
                 self.deps.github.open_draft_pr,
                 state["repo"],
-                head_commit(self._root(state)),
-                f"agent/issue-{issue.number}-run-{run_id}",
-                patch["changes"],
+                head_commit(root),
+                branch,
+                files,
                 f"Fix #{issue.number}: {issue.title}",
                 body,
             ),
@@ -341,6 +353,14 @@ class Agent:
 
     def after_review(self, state: RunState) -> str:
         return "open_pr" if state["decision"].get("approved") else "rejected"
+
+
+def _line_endings_like(original: Path, text: str) -> str:
+    """The agent works with LF; a file that used CRLF gets CRLF back, so its PR diff shows
+    only the lines that changed."""
+    if original.is_file() and b"\r\n" in original.read_bytes():
+        return text.replace("\r\n", "\n").replace("\n", "\r\n")
+    return text
 
 
 def _write(path: Path, text: str) -> str:

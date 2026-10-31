@@ -84,6 +84,22 @@ class Store:
             (repo, issue_number, model, now()),
         )
 
+    def claim_for_review(self, run_id: int) -> bool:
+        """Moves a run from awaiting_approval to running; False if it was not waiting."""
+        with closing(self._connect()) as conn, conn:
+            cursor = conn.execute(
+                "UPDATE runs SET status = 'running' WHERE id = ? AND status = 'awaiting_approval'",
+                (run_id,),
+            )
+            return cursor.rowcount == 1
+
+    def fail_interrupted(self) -> None:
+        self._write(
+            "UPDATE runs SET status = 'failed', finished_at = ?, "
+            "error = 'The server stopped while this run was working.' WHERE status = 'running'",
+            (now(),),
+        )
+
     def update_run(self, run_id: int, **fields: str) -> None:
         unknown = set(fields) - RUN_FIELDS
         if unknown:

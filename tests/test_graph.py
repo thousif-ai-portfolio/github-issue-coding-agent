@@ -128,7 +128,7 @@ def test_approval_on_github_opens_a_draft_pr(make_deps, settings, tmp_path, monk
     monkeypatch.setattr(
         graph_module,
         "resolve_target",
-        lambda *args: Target("o/r", Issues(), lambda: repo_dir),
+        lambda *args: Target("o/r", Issues(), lambda _: repo_dir),
     )
     requests = []
 

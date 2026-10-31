@@ -168,6 +168,10 @@ to compare. A 7B model needs about 8 GB of free RAM.
   approval saves the patch instead; the unit tests cover the PR step with a fake GitHub
   API. It has been run live once, on
   [shopkit-demo](https://github.com/thousif-ai-portfolio/shopkit-demo/pull/2).
+- **Public repositories only.** Cloning never asks for credentials, so a private
+  repository fails at once with a clear error.
+- **No login on the dashboard and API.** They are meant for your own machine
+  (localhost); approving needs a JSON request, which other web pages cannot send.
 - **Slow on a CPU:** about 3 minutes per issue with a 3B model.
 
 ## Run it
