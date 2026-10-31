@@ -62,6 +62,20 @@ recorded with its input, output and duration, so each run can be inspected after
   right, but they can copy a few lines exactly. The agent applies the edits and produces
   the diff itself. An edit must match exactly once and the file must still compile.
 
+**Trade-offs**
+- **A 3B local model instead of a hosted one.** It is free, private and runs on a laptop
+  with 8 GB of RAM, where a 7B model is too slow and tight on memory. The cost is
+  quality: it fixes 6 of 18 benchmark bugs. Because the model is one setting, the same
+  pipeline and benchmark can measure a stronger model without code changes.
+- **LangGraph instead of a hand-written loop.** Checkpointing to SQLite and pausing for a
+  person (`interrupt`) come built in, which is what lets a run wait for review and survive
+  a restart. The cost is a framework dependency; the graph itself stays small
+  ([`agent/graph.py`](agent/graph.py)).
+- **A Docker sandbox instead of running tests directly.** Generated code is untrusted, so
+  isolation is worth needing Docker and starting a container for every test run.
+- **Draft PRs behind human approval instead of automatic merges.** Slower, but the
+  benchmark shows why: some patches pass the agent's own tests and are still wrong.
+
 ## Stack
 
 | Part | Choice |
