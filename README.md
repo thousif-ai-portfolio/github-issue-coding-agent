@@ -9,6 +9,12 @@ request. It runs entirely on your own machine for free: a local model, no API ke
 **[Watch the 3-minute walkthrough video](docs/demo.mp4)** (narrated, with captions): a live
 run from issue to approval, a wrong fix the hidden test caught, and the benchmark results.
 
+**A real draft PR it opened:** given
+[issue #1 in shopkit-demo](https://github.com/thousif-ai-portfolio/shopkit-demo/issues/1),
+the agent wrote a failing test, fixed the code, passed the tests in the sandbox and, after
+approval in the dashboard, opened
+[draft PR #2](https://github.com/thousif-ai-portfolio/shopkit-demo/pull/2) by itself.
+
 **Benchmark (18 planted bugs, graded by hidden tests):** a 3-billion-parameter model on a
 laptop CPU fixes 6 of 18. When it asks for review, it is right 75% of the time, and every
 patch is checked by a person before anything reaches GitHub. [Results and failure
@@ -158,9 +164,10 @@ to compare. A 7B model needs about 8 GB of free RAM.
 
 - **Python repositories whose tests need only pytest.** The sandbox has no network, so it
   cannot install a project's dependencies.
-- **The draft-PR step is tested against a fake GitHub API**, not run live in this repo's
-  demo, which uses the bundled demo repo (approval saves the patch instead). Pointing the
-  agent at a real repository with a token opens a real draft PR.
+- **Draft PRs need a GitHub repository.** The bundled demo repo has none, so there
+  approval saves the patch instead; the unit tests cover the PR step with a fake GitHub
+  API. It has been run live once, on
+  [shopkit-demo](https://github.com/thousif-ai-portfolio/shopkit-demo/pull/2).
 - **Slow on a CPU:** about 3 minutes per issue with a 3B model.
 
 ## Run it
