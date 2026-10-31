@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from agent import cli
 from agent.main import app, get_deps
 from tests.conftest import MEDIAN_FIX, MEDIAN_TEST, median_replies
 
@@ -93,3 +94,27 @@ def test_serves_built_dashboard_without_hiding_the_api(tmp_path):
     browser = TestClient(site)
     assert "<div id=root>" in browser.get("/").text
     assert browser.get("/api/health").json() == {"status": "ok"}
+
+
+def test_numbers_beyond_the_database_range_are_rejected(client):
+    too_big = 2**63
+    assert (
+        client.post("/api/runs", json={"source": "demo", "issue_number": too_big}).status_code
+        == 422
+    )
+    assert client.get(f"/api/runs/{too_big}").status_code == 422
+
+
+def test_server_start_marks_runs_cut_off_by_a_restart_as_failed(client, store):
+    run_id = store.create_run("demo", 1, "m")
+    with TestClient(app):  # starting the app runs its lifespan
+        pass
+    assert store.get_run(run_id)["status"] == "failed"
+
+
+def test_cli_does_not_fail_runs_the_server_is_working_on(store, make_deps, monkeypatch, capsys):
+    run_id = store.create_run("demo", 1, "m")
+    monkeypatch.setattr(cli, "get_deps", lambda: make_deps([]))
+    assert cli.main(["issues", "not a repo"]) == 1
+    assert "Cannot list issues" in capsys.readouterr().out
+    assert store.get_run(run_id)["status"] == "running"

@@ -2,12 +2,15 @@
 client polls GET /api/runs/{id}. A run that passes its tests waits for a person to
 approve or reject it before anything is sent to GitHub."""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
+from fastapi import Path as PathParam
 from fastapi.staticfiles import StaticFiles
 
 from agent.config import Settings, get_settings
@@ -20,7 +23,20 @@ from agent.schemas import IssueOut, ReviewRequest, RunDetail, RunRequest, RunSum
 from agent.store import Store
 from agent.targets import resolve_target
 
-app = FastAPI(title="GitHub Issue Coding Agent", version="0.2.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Runs execute inside the server process, so any still "running" when it starts were
+    # cut off by a restart. (Honours test overrides of get_deps.)
+    app.dependency_overrides.get(get_deps, get_deps)().store.fail_interrupted()
+    yield
+
+
+app = FastAPI(title="GitHub Issue Coding Agent", version="0.2.0", lifespan=lifespan)
+
+
+# Run ids are SQLite integers; anything larger is a 422 rather than a database error.
+RunId = Annotated[int, PathParam(ge=1, le=2**63 - 1)]
 
 
 @lru_cache
@@ -43,8 +59,6 @@ def get_deps() -> Deps:
         settings=settings,
         github=GitHubClient(settings.github_token, settings.github_api),
     )
-    # Runs execute inside this process, so any still "running" were cut off by a restart.
-    deps.store.fail_interrupted()
     return deps
 
 
@@ -93,7 +107,7 @@ def _get_run(run_id: int, deps: Deps) -> dict:
 
 
 @app.get("/api/runs/{run_id}", response_model=RunDetail)
-def get_run(run_id: int, deps: Deps = Depends(get_deps)) -> dict:
+def get_run(run_id: RunId, deps: Deps = Depends(get_deps)) -> dict:
     return _get_run(run_id, deps)
 
 
@@ -108,7 +122,7 @@ def _review(run_id: int, approved: bool, comment: str, background, deps: Deps) -
 
 @app.post("/api/runs/{run_id}/approve", status_code=202, response_model=RunSummary)
 def approve_run(
-    run_id: int,
+    run_id: RunId,
     background: BackgroundTasks,
     review: ReviewRequest,
     deps: Deps = Depends(get_deps),
@@ -120,7 +134,7 @@ def approve_run(
 
 @app.post("/api/runs/{run_id}/reject", status_code=202, response_model=RunSummary)
 def reject_run(
-    run_id: int,
+    run_id: RunId,
     background: BackgroundTasks,
     review: ReviewRequest,
     deps: Deps = Depends(get_deps),

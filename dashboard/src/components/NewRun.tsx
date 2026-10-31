@@ -90,7 +90,12 @@ export function NewRun({ onStarted }: { onStarted: (runId: number) => void }) {
             aria-label="Repository"
             placeholder="owner/name"
             value={repo}
-            onChange={(e) => setRepo(e.target.value.trim())}
+            onChange={(e) => {
+              // The loaded issues belong to the old name; a run must not mix the two.
+              setRepo(e.target.value.trim())
+              setIssues([])
+              setIssueNumber(null)
+            }}
           />
           <button
             type="button"

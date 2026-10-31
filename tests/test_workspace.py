@@ -4,6 +4,7 @@ import pytest
 
 from agent.config import Settings
 from agent.edits import EditError, apply_edits, make_diff
+from agent.git_ops import git
 from agent.graph import _line_endings_like
 from agent.sandbox import copy_repo
 from agent.schemas import Edit
@@ -147,3 +148,21 @@ def test_runs_cut_off_by_a_restart_are_marked_failed(tmp_path):
     run_id = store.create_run("demo", 1, "m")
     store.fail_interrupted()
     assert store.get_run(run_id)["status"] == "failed"
+
+
+def test_clones_keep_lf_even_where_git_converts_to_crlf(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "a.py").write_bytes(b"x = 1\n")
+    for args in (
+        ["init", "-q"],
+        ["add", "a.py"],
+        ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a"],
+    ):
+        subprocess.run(["git", *args], cwd=source, check=True)
+    # Git for Windows' default: convert LF to CRLF on checkout.
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.autocrlf")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "true")
+    git("clone", "-q", str(source), str(tmp_path / "clone"))
+    assert (tmp_path / "clone" / "a.py").read_bytes() == b"x = 1\n"

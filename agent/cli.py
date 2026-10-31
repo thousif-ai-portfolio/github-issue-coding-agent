@@ -10,6 +10,7 @@ python -m agent.cli reject 5 --comment "Wrong file"
 import argparse
 import sys
 
+from agent.github_client import GitHubError
 from agent.graph import resume_run, start_run
 from agent.main import get_deps
 from agent.targets import resolve_target
@@ -51,8 +52,13 @@ def main(argv: list[str] | None = None) -> int:
 
     deps = get_deps()
     if args.command == "issues":
-        target = resolve_target("demo" if args.demo else "github", args.repo, deps.settings)
-        for issue in target.issues.list_open():
+        try:
+            target = resolve_target("demo" if args.demo else "github", args.repo, deps.settings)
+            issues = target.issues.list_open()
+        except (ValueError, LookupError, GitHubError) as exc:
+            print(f"Cannot list issues: {exc}")
+            return 1
+        for issue in issues:
             print(f"#{issue.number:<4} {issue.title}")
         return 0
 
@@ -65,7 +71,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         run_id = args.run_id
         current = deps.store.get_run(run_id)
-        if current is None or current["status"] != "awaiting_approval":
+        # The same atomic claim as the API, so the CLI and the dashboard can't both resume it.
+        if current is None or not deps.store.claim_for_review(run_id):
             status = current["status"] if current else "missing"
             print(f"Run {run_id} is {status}, not awaiting approval.")
             return 1

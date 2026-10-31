@@ -55,7 +55,7 @@ class TestProposal(BaseModel):
 class RunRequest(BaseModel):
     source: Literal["github", "demo"] = "github"
     repo: str | None = Field(default=None, examples=["owner/name"])
-    issue_number: int = Field(ge=1)
+    issue_number: int = Field(ge=1, le=2**31 - 1)
 
     @model_validator(mode="after")
     def _repo_for_github(self):

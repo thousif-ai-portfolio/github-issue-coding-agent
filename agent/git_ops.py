@@ -14,7 +14,9 @@ class GitError(RuntimeError):
 def git(*args: str, cwd: Path | None = None) -> str:
     try:
         result = subprocess.run(
-            ["git", *args],
+            # autocrlf off: the working tree keeps the repository's own line endings, which
+            # the PR then preserves (Git for Windows would otherwise turn LF into CRLF).
+            ["git", "-c", "core.autocrlf=false", *args],
             cwd=cwd,
             capture_output=True,
             text=True,

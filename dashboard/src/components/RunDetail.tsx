@@ -28,9 +28,12 @@ export function RunDetail({ runId, onChanged }: Props) {
 
   // Time the agent spent working, not time spent waiting for a reviewer.
   const running = run.status === 'running'
+  const working = run.steps.filter((s) => s.name !== 'human_review')
+  const lastStep = run.steps[run.steps.length - 1]
+  const finishedMs = working.reduce((sum, s) => sum + s.duration_ms, 0)
   const agentMs = running
-    ? now - parseTime(run.created_at).getTime()
-    : run.steps.filter((s) => s.name !== 'human_review').reduce((sum, s) => sum + s.duration_ms, 0)
+    ? finishedMs + now - parseTime(lastStep?.created_at ?? run.created_at).getTime()
+    : finishedMs
 
   async function afterReview() {
     setPolling(true)
